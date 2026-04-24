@@ -323,7 +323,7 @@
     <ul>
       <li>初回起動時のみPyodide（ブラウザ用Python）の読み込みでネット接続が必要です（約10MB）</li>
       <li>2回目以降はブラウザキャッシュにより完全オフラインで動作します</li>
-      <li>ezdxfライブラリは初回のみmicropipでインストールされます（約3分かかる場合があります）</li>
+      <li>pymupdfライブラリは初回のみmicropipでインストールされます（約3分かかる場合があります）</li>
       <li>ベクターPDF（CADから出力）が最適です。スキャンPDFは線分抽出できません</li>
       <li>テキスト・寸法注記・画像は変換対象外です</li>
       <li>変換はすべてブラウザ内で完結し、データは外部に送信されません</li>
@@ -338,7 +338,7 @@ const initText = document.getElementById('initText');
 const initSpinner = document.getElementById('initSpinner');
 
 let pyodide = null;
-let ezdxfReady = false;
+let pymupdfReady = false;
 let dxfBlob = null;
 let dxfFilename = 'converted.dxf';
 
@@ -348,13 +348,13 @@ async function initPyodide() {
     const { loadPyodide } = await import('https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.mjs');
     pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/' });
 
-    initText.textContent = 'micropipでezdxfをインストール中（初回のみ数分かかります）...';
+    initText.textContent = 'micropipでpymupdfをインストール中（初回のみ数分かかります）...';
     await pyodide.loadPackage('micropip');
     await pyodide.runPythonAsync(`
 import micropip
-await micropip.install('ezdxf')
+await micropip.install('pymupdf')
 `);
-    ezdxfReady = true;
+    pymupdfReady = true;
 
     initBar.classList.add('done');
     initSpinner.style.display = 'none';
@@ -402,7 +402,7 @@ function setFile(f) {
   document.getElementById('fileSize').textContent = fmt(f.size);
   fileInfo.classList.add('show');
   optPanel.classList.add('show');
-  if (ezdxfReady) convertBtn.disabled = false;
+  if (pymupdfReady) convertBtn.disabled = false;
   hideAll();
 }
 
@@ -439,7 +439,7 @@ function setProgress(pct, text, log) {
 
 // === 変換処理 ===
 convertBtn.addEventListener('click', async () => {
-  if (!selectedFile || !ezdxfReady) return;
+  if (!selectedFile || !pymupdfReady) return;
   hideAll();
   convertBtn.disabled = true;
   document.getElementById('progressLog').textContent = '';
@@ -462,7 +462,7 @@ convertBtn.addEventListener('click', async () => {
 
     const pythonCode = `
 import fitz
-import ezdxf
+import pymupdf
 import json
 
 PT_SCALE = ${unitScale}
@@ -491,11 +491,11 @@ else:
 if not page_nums:
     page_nums = [0]
 
-dxf = ezdxf.new(DXF_VER)
+dxf = pymupdf.new(DXF_VER)
 if UNIT == 'mm':
-    dxf.units = ezdxf.units.MM
+    dxf.units = pymupdf.units.MM
 elif UNIT == 'inch':
-    dxf.units = ezdxf.units.IN
+    dxf.units = pymupdf.units.IN
 msp = dxf.modelspace()
 
 line_count = 0
