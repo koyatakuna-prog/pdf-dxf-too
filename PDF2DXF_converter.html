@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF → DXF コンバーター</title>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: #dddbd3;
+    --border2: #c8c6bc;
+    --text: #1a1a18;
+    --text2: #6b6960;
+    --text3: #9b9890;
+    --accent: #1a1a18;
+    --accent-text: #ffffff;
+    --blue-bg: #e8f0fa;
+    --blue-text: #1a4a8a;
+    --green-bg: #e6f4ea;
+    --green-text: #1a6a32;
+    --red-bg: #fdecea;
+    --red-text: #8a1a1a;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 64px;
+  }
+
+  .app-wrap { width: 100%; max-width: 600px; }
+
+  .app-header { margin-bottom: 28px; }
+  .app-header h1 {
+    font-size: 22px; font-weight: 600; letter-spacing: -0.02em;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .app-header h1 .badge {
+    font-size: 10px; font-weight: 500; letter-spacing: 0.05em;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 99px; padding: 3px 8px; color: var(--text2);
+    vertical-align: middle;
+  }
+  .app-header p { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.6; }
+
+  /* 初期化ステータス */
+  .init-bar {
+    background: var(--blue-bg); border: 1px solid #b8d0f0;
+    border-radius: var(--radius); padding: 12px 16px;
+    margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--blue-text);
+  }
+  .init-bar.done { background: var(--green-bg); border-color: #a0d4b0; color: var(--green-text); }
+  .init-bar.hidden { display: none; }
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid #b8d0f0;
+    border-top-color: var(--blue-text); border-radius: 50%;
+    animation: spin 0.8s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .check { font-size: 16px; }
+
+  /* ドロップゾーン */
+  .drop-zone {
+    background: var(--surface); border: 2px dashed var(--border2);
+    border-radius: var(--radius); padding: 36px 24px;
+    text-align: center; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative; margin-bottom: 16px;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent); background: var(--surface2);
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon {
+    width: 48px; height: 48px; margin: 0 auto 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
+  }
+  .drop-icon svg { width: 22px; height: 22px; stroke: var(--text2); fill: none; stroke-width: 1.5; }
+  .drop-title { font-size: 15px; font-weight: 600; }
+  .drop-sub { font-size: 12px; color: var(--text2); margin-top: 5px; }
+
+  /* ファイル情報 */
+  .file-info {
+    display: none; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 16px; margin-bottom: 16px;
+    align-items: center; gap: 12px;
+  }
+  .file-info.show { display: flex; }
+  .file-badge {
+    width: 40px; height: 40px; background: var(--blue-bg);
+    border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--blue-text); letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+  .file-meta { flex: 1; min-width: 0; }
+  .file-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-size { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .remove-btn {
+    background: none; border: none; cursor: pointer; color: var(--text3);
+    font-size: 18px; line-height: 1; padding: 4px; border-radius: var(--radius-sm);
+  }
+  .remove-btn:hover { color: var(--text); background: var(--surface2); }
+
+  /* オプション */
+  .options-panel {
+    display: none; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 16px;
+  }
+  .options-panel.show { display: block; }
+  .opt-section-title {
+    font-size: 11px; font-weight: 600; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px;
+  }
+  .opt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .opt-item label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; font-weight: 500; }
+  .opt-item select, .opt-item input[type=text] {
+    width: 100%; font-size: 13px; padding: 7px 10px;
+    border: 1px solid var(--border2); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text);
+    font-family: inherit;
+  }
+  .opt-item select:focus, .opt-item input:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px;
+  }
+
+  /* 変換ボタン */
+  .convert-btn {
+    display: block; width: 100%; padding: 13px;
+    font-size: 15px; font-weight: 600; font-family: inherit;
+    background: var(--accent); color: var(--accent-text);
+    border: none; border-radius: var(--radius); cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-bottom: 16px;
+  }
+  .convert-btn:hover:not(:disabled) { opacity: 0.85; }
+  .convert-btn:active:not(:disabled) { transform: scale(0.99); }
+  .convert-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* プログレス */
+  .progress-area { display: none; margin-bottom: 16px; }
+  .progress-area.show { display: block; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--text2); margin-bottom: 7px;
+  }
+  .progress-track {
+    height: 4px; background: var(--border); border-radius: 99px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; background: var(--accent); border-radius: 99px;
+    width: 0%; transition: width 0.4s ease;
+  }
+  .progress-log {
+    margin-top: 10px; font-size: 12px; color: var(--text2);
+    background: var(--surface2); border-radius: var(--radius-sm);
+    padding: 10px 12px; max-height: 80px; overflow-y: auto;
+    font-family: 'Courier New', monospace; line-height: 1.7;
+  }
+
+  /* 結果 */
+  .result-area { display: none; margin-bottom: 16px; }
+  .result-area.show { display: block; }
+  .result-card {
+    background: var(--green-bg); border: 1px solid #a0d4b0;
+    border-radius: var(--radius); padding: 16px;
+  }
+  .result-title { font-size: 13px; font-weight: 600; color: var(--green-text); margin-bottom: 12px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .stat-card {
+    background: #ffffff; border-radius: var(--radius-sm);
+    padding: 10px 8px; text-align: center;
+    border: 1px solid #c0e0c8;
+  }
+  .stat-val { font-size: 18px; font-weight: 700; color: var(--text); }
+  .stat-lbl { font-size: 10px; color: var(--text2); margin-top: 2px; }
+  .download-btn {
+    display: block; width: 100%; padding: 11px;
+    font-size: 14px; font-weight: 600; text-align: center;
+    background: var(--green-text); color: #fff;
+    border: none; border-radius: var(--radius-sm); cursor: pointer;
+    text-decoration: none; font-family: inherit;
+    transition: opacity 0.15s;
+  }
+  .download-btn:hover { opacity: 0.85; }
+
+  /* エラー */
+  .error-area { display: none; margin-bottom: 16px; }
+  .error-area.show { display: block; }
+  .error-card {
+    background: var(--red-bg); border: 1px solid #e0a0a0;
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .error-title { font-size: 13px; font-weight: 600; color: var(--red-text); margin-bottom: 4px; }
+  .error-msg { font-size: 12px; color: #6a2a2a; line-height: 1.6; }
+
+  /* 注意書き */
+  .note-list {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .note-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+  .note-list ul { list-style: none; padding: 0; }
+  .note-list li {
+    font-size: 12px; color: var(--text2); padding: 3px 0;
+    padding-left: 14px; position: relative; line-height: 1.6;
+  }
+  .note-list li::before { content: '·'; position: absolute; left: 0; color: var(--text3); font-size: 16px; line-height: 1.1; }
+</style>
+</head>
+<body>
+<div class="app-wrap">
+  <div class="app-header">
+    <h1>PDF → DXF コンバーター <span class="badge">OFFLINE</span></h1>
+    <p>CAD図面PDFをDXF形式に変換します。インターネット接続不要でオフライン動作します。</p>
+  </div>
+
+  <div class="init-bar" id="initBar">
+    <div class="spinner" id="initSpinner"></div>
+    <span id="initText">Python環境を初期化中（初回のみ時間がかかります）...</span>
+  </div>
+
+  <div class="drop-zone" id="dropZone">
+    <input type="file" accept=".pdf" id="fileInput" />
+    <div class="drop-icon">
+      <svg viewBox="0 0 24 24"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/><path d="M13 3v6h6"/></svg>
+    </div>
+    <div class="drop-title">PDFをドロップ、またはクリックして選択</div>
+    <div class="drop-sub">ベクターCAD図面のPDFに最適</div>
+  </div>
+
+  <div class="file-info" id="fileInfo">
+    <div class="file-badge">PDF</div>
+    <div class="file-meta">
+      <div class="file-name" id="fileName">—</div>
+      <div class="file-size" id="fileSize">—</div>
+    </div>
+    <button class="remove-btn" id="removeBtn" title="削除">✕</button>
+  </div>
+
+  <div class="options-panel" id="optionsPanel">
+    <div class="opt-section-title">変換オプション</div>
+    <div class="opt-grid">
+      <div class="opt-item">
+        <label>単位</label>
+        <select id="unitSel">
+          <option value="mm">ミリメートル (mm)</option>
+          <option value="inch">インチ (inch)</option>
+          <option value="pt">ポイント（変換なし）</option>
+        </select>
+      </div>
+      <div class="opt-item">
+        <label>DXFバージョン</label>
+        <select id="verSel">
+          <option value="R2010">R2010（推奨）</option>
+          <option value="R2000">R2000</option>
+          <option value="R12">R12（旧互換）</option>
+        </select>
+      </div>
+      <div class="opt-item">
+        <label>変換ページ</label>
+        <input type="text" id="pageInput" value="1" placeholder="例: 1 または 1,3,5 または all" />
+      </div>
+      <div class="opt-item">
+        <label>曲線近似</label>
+        <select id="curveSel">
+          <option value="line">直線近似（高速）</option>
+          <option value="segment">分割近似（なめらか）</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <button class="convert-btn" id="convertBtn" disabled>変換する</button>
+
+  <div class="progress-area" id="progressArea">
+    <div class="progress-label">
+      <span id="progressText">処理中...</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-log" id="progressLog"></div>
+  </div>
+
+  <div class="result-area" id="resultArea">
+    <div class="result-card">
+      <div class="result-title">✓ 変換完了</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-val" id="sLines">—</div><div class="stat-lbl">線分</div></div>
+        <div class="stat-card"><div class="stat-val" id="sRects">—</div><div class="stat-lbl">矩形</div></div>
+        <div class="stat-card"><div class="stat-val" id="sCurves">—</div><div class="stat-lbl">曲線</div></div>
+        <div class="stat-card"><div class="stat-val" id="sSize">—</div><div class="stat-lbl">サイズ</div></div>
+      </div>
+      <button class="download-btn" id="downloadBtn">DXFをダウンロード ↓</button>
+    </div>
+  </div>
+
+  <div class="error-area" id="errorArea">
+    <div class="error-card">
+      <div class="error-title">エラーが発生しました</div>
+      <div class="error-msg" id="errorMsg">—</div>
+    </div>
+  </div>
+
+  <div class="note-list">
+    <div class="note-title">使用上の注意</div>
+    <ul>
+      <li>初回起動時のみPyodide（ブラウザ用Python）の読み込みでネット接続が必要です（約10MB）</li>
+      <li>2回目以降はブラウザキャッシュにより完全オフラインで動作します</li>
+      <li>ezdxfライブラリは初回のみmicropipでインストールされます（約3分かかる場合があります）</li>
+      <li>ベクターPDF（CADから出力）が最適です。スキャンPDFは線分抽出できません</li>
+      <li>テキスト・寸法注記・画像は変換対象外です</li>
+      <li>変換はすべてブラウザ内で完結し、データは外部に送信されません</li>
+    </ul>
+  </div>
+</div>
+
+<script type="module">
+// === Pyodide 初期化 ===
+const initBar = document.getElementById('initBar');
+const initText = document.getElementById('initText');
+const initSpinner = document.getElementById('initSpinner');
+
+let pyodide = null;
+let ezdxfReady = false;
+let dxfBlob = null;
+let dxfFilename = 'converted.dxf';
+
+async function initPyodide() {
+  try {
+    initText.textContent = 'Pyodide（ブラウザ用Python）を読み込み中...';
+    const { loadPyodide } = await import('https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.mjs');
+    pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/' });
+
+    initText.textContent = 'micropipでezdxfをインストール中（初回のみ数分かかります）...';
+    await pyodide.loadPackage('micropip');
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install('ezdxf')
+`);
+    ezdxfReady = true;
+
+    initBar.classList.add('done');
+    initSpinner.style.display = 'none';
+    const check = document.createElement('span');
+    check.className = 'check';
+    check.textContent = '✓';
+    initBar.insertBefore(check, initBar.firstChild);
+    initText.textContent = 'Python環境の準備完了 — PDFを選択して変換できます';
+
+    if (document.getElementById('fileInfo').classList.contains('show')) {
+      document.getElementById('convertBtn').disabled = false;
+    }
+  } catch (e) {
+    initText.textContent = 'エラー: ' + e.message;
+    initBar.style.background = '#fdecea';
+    initBar.style.borderColor = '#e0a0a0';
+    initBar.style.color = '#8a1a1a';
+    initSpinner.style.display = 'none';
+  }
+}
+initPyodide();
+
+// === ファイル操作 ===
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const fileInfo = document.getElementById('fileInfo');
+const optPanel = document.getElementById('optionsPanel');
+const convertBtn = document.getElementById('convertBtn');
+
+function fmt(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function fmtNum(n) {
+  return n >= 10000 ? (n/1000).toFixed(1) + 'k' : n.toLocaleString();
+}
+
+let selectedFile = null;
+function setFile(f) {
+  if (!f || !f.name.toLowerCase().endsWith('.pdf')) { showError('PDFファイルのみ対応しています。'); return; }
+  selectedFile = f;
+  dxfFilename = f.name.replace(/\.pdf$/i, '') + '.dxf';
+  document.getElementById('fileName').textContent = f.name;
+  document.getElementById('fileSize').textContent = fmt(f.size);
+  fileInfo.classList.add('show');
+  optPanel.classList.add('show');
+  if (ezdxfReady) convertBtn.disabled = false;
+  hideAll();
+}
+
+fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+document.getElementById('removeBtn').addEventListener('click', () => {
+  selectedFile = null; fileInput.value = '';
+  fileInfo.classList.remove('show'); optPanel.classList.remove('show');
+  convertBtn.disabled = true; hideAll();
+});
+
+function hideAll() {
+  document.getElementById('progressArea').classList.remove('show');
+  document.getElementById('resultArea').classList.remove('show');
+  document.getElementById('errorArea').classList.remove('show');
+}
+function showError(msg) {
+  hideAll();
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('errorArea').classList.add('show');
+}
+function setProgress(pct, text, log) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = text;
+  document.getElementById('progressPct').textContent = pct + '%';
+  if (log) {
+    const el = document.getElementById('progressLog');
+    el.textContent += log + '\n';
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// === 変換処理 ===
+convertBtn.addEventListener('click', async () => {
+  if (!selectedFile || !ezdxfReady) return;
+  hideAll();
+  convertBtn.disabled = true;
+  document.getElementById('progressLog').textContent = '';
+  document.getElementById('progressArea').classList.add('show');
+  setProgress(5, 'PDFを読み込み中...', 'ファイル読み込み開始');
+
+  const unit = document.getElementById('unitSel').value;
+  const ver = document.getElementById('verSel').value;
+  const pageStr = document.getElementById('pageInput').value.trim() || '1';
+  const curveMode = document.getElementById('curveSel').value;
+
+  try {
+    const arrayBuffer = await selectedFile.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+    pyodide.FS.writeFile('/tmp/input.pdf', uint8);
+    setProgress(15, 'PDFを解析中...', 'ファイルをPyodideに転送完了');
+
+    const unitScale = unit === 'mm' ? '25.4 / 72.0' : unit === 'inch' ? '1.0 / 72.0' : '1.0';
+    const segments = curveMode === 'segment' ? '8' : '1';
+
+    const pythonCode = `
+import fitz
+import ezdxf
+import json
+
+PT_SCALE = ${unitScale}
+DXF_VER = "${ver}"
+CURVE_SEGS = ${segments}
+PAGE_STR = "${pageStr}"
+UNIT = "${unit}"
+
+doc_pdf = fitz.open("/tmp/input.pdf")
+total_pages = len(doc_pdf)
+
+# ページ番号解決
+if PAGE_STR.strip().lower() == 'all':
+    page_nums = list(range(total_pages))
+else:
+    page_nums = []
+    for tok in PAGE_STR.split(','):
+        tok = tok.strip()
+        if '-' in tok:
+            a, b = tok.split('-')
+            page_nums.extend(range(int(a)-1, int(b)))
+        elif tok.isdigit():
+            page_nums.append(int(tok)-1)
+    page_nums = [p for p in page_nums if 0 <= p < total_pages]
+
+if not page_nums:
+    page_nums = [0]
+
+dxf = ezdxf.new(DXF_VER)
+if UNIT == 'mm':
+    dxf.units = ezdxf.units.MM
+elif UNIT == 'inch':
+    dxf.units = ezdxf.units.IN
+msp = dxf.modelspace()
+
+line_count = 0
+rect_count = 0
+curve_count = 0
+
+for pg_idx in page_nums:
+    page = doc_pdf[pg_idx]
+    ph = page.rect.height
+    paths = page.get_drawings()
+    offset_y = pg_idx * ph * PT_SCALE * 1.1
+
+    for path in paths:
+        for item in path.get('items', []):
+            itype = item[0]
+            try:
+                if itype == 'l':
+                    p1, p2 = item[1], item[2]
+                    x1 = p1.x * PT_SCALE
+                    y1 = (ph - p1.y) * PT_SCALE + offset_y
+                    x2 = p2.x * PT_SCALE
+                    y2 = (ph - p2.y) * PT_SCALE + offset_y
+                    msp.add_line((x1, y1), (x2, y2))
+                    line_count += 1
+
+                elif itype == 're':
+                    r = item[1]
+                    x1 = r.x0 * PT_SCALE
+                    y1 = (ph - r.y0) * PT_SCALE + offset_y
+                    x2 = r.x1 * PT_SCALE
+                    y2 = (ph - r.y1) * PT_SCALE + offset_y
+                    msp.add_line((x1,y1),(x2,y1))
+                    msp.add_line((x2,y1),(x2,y2))
+                    msp.add_line((x2,y2),(x1,y2))
+                    msp.add_line((x1,y2),(x1,y1))
+                    rect_count += 1
+
+                elif itype in ('c', 'qu'):
+                    pts = item[1:]
+                    n = CURVE_SEGS
+                    coords = []
+                    if itype == 'qu' and len(pts) >= 3:
+                        p0, p1c, p2 = pts[0], pts[1], pts[2]
+                        for i in range(n+1):
+                            t = i / n
+                            x = (1-t)**2*p0.x + 2*(1-t)*t*p1c.x + t**2*p2.x
+                            y = (1-t)**2*p0.y + 2*(1-t)*t*p1c.y + t**2*p2.y
+                            coords.append((x * PT_SCALE, (ph-y)*PT_SCALE + offset_y))
+                    elif itype == 'c' and len(pts) >= 4:
+                        p0, p1c, p2c, p3 = pts[0], pts[1], pts[2], pts[3]
+                        for i in range(n+1):
+                            t = i / n
+                            x = (1-t)**3*p0.x + 3*(1-t)**2*t*p1c.x + 3*(1-t)*t**2*p2c.x + t**3*p3.x
+                            y = (1-t)**3*p0.y + 3*(1-t)**2*t*p1c.y + 3*(1-t)*t**2*p2c.y + t**3*p3.y
+                            coords.append((x * PT_SCALE, (ph-y)*PT_SCALE + offset_y))
+                    else:
+                        p_s, p_e = pts[0], pts[-1]
+                        coords = [(p_s.x*PT_SCALE,(ph-p_s.y)*PT_SCALE+offset_y),(p_e.x*PT_SCALE,(ph-p_e.y)*PT_SCALE+offset_y)]
+                    for i in range(len(coords)-1):
+                        msp.add_line(coords[i], coords[i+1])
+                    curve_count += 1
+            except Exception:
+                pass
+
+dxf.saveas('/tmp/output.dxf')
+
+import os
+fsize = os.path.getsize('/tmp/output.dxf')
+
+json.dumps({
+    "lines": line_count,
+    "rects": rect_count,
+    "curves": curve_count,
+    "total": line_count + rect_count*4 + curve_count,
+    "filesize": fsize,
+    "pages": len(page_nums)
+})
+`;
+
+    setProgress(25, 'Pythonで変換中...', `対象ページ: ${pageStr} / 単位: ${unit} / バージョン: ${ver}`);
+
+    const resultJson = await pyodide.runPythonAsync(pythonCode);
+    const stats = JSON.parse(resultJson);
+
+    setProgress(80, 'DXFファイルを生成中...', `線分: ${stats.lines.toLocaleString()} / 矩形: ${stats.rects.toLocaleString()} / 曲線: ${stats.curves.toLocaleString()}`);
+
+    const dxfBytes = pyodide.FS.readFile('/tmp/output.dxf');
+    dxfBlob = new Blob([dxfBytes], { type: 'application/dxf' });
+
+    setProgress(100, '変換完了', `ファイルサイズ: ${fmt(dxfBlob.size)}`);
+
+    document.getElementById('sLines').textContent = fmtNum(stats.lines);
+    document.getElementById('sRects').textContent = fmtNum(stats.rects);
+    document.getElementById('sCurves').textContent = fmtNum(stats.curves);
+    document.getElementById('sSize').textContent = fmt(dxfBlob.size);
+
+    setTimeout(() => {
+      document.getElementById('progressArea').classList.remove('show');
+      document.getElementById('resultArea').classList.add('show');
+    }, 600);
+
+  } catch (e) {
+    showError(e.message || '変換中にエラーが発生しました。ベクター形式のPDFか確認してください。');
+  } finally {
+    convertBtn.disabled = false;
+  }
+});
+
+// ダウンロード
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!dxfBlob) return;
+  const url = URL.createObjectURL(dxfBlob);
+  const a = document.createElement('a');
+  a.href = url; a.download = dxfFilename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+</script>
+</body>
+</html>
